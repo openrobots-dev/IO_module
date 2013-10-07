@@ -24,4 +24,11 @@
 		<nature>org.eclipse.cdt.managedbuilder.core.managedBuildNature</nature>
 		<nature>org.eclipse.cdt.managedbuilder.core.ScannerConfigNature</nature>
 	</natures>
+	<linkedResources>
+		<link>
+			<name>os</name>
+			<type>2</type>
+			<location>/opt/ChibiStudio/ChibiOS_2.6.0/os</location>
+		</link>
+	</linkedResources>
 </projectDescription>

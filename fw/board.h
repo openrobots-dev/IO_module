@@ -40,7 +40,13 @@
 /*
  * MCU type, supported types are defined in ./os/hal/platforms/hal_lld.h.
  */
-#define STM32F10X_MD
+#define STM32F10X_HD
+
+/*
+ * Peripherals assignments.
+ */
+#define SERIAL_DRIVER           SD1
+#define SPI_DRIVER              SPID2
 
 /*
  * IO pins assignments.
@@ -54,7 +60,8 @@
 #define LED4_GPIO				GPIOA
 #define LED4					8
 
-#define SERIAL_DRIVER           SD1
+#define VINH_GPIO				GPIOC
+#define VINH					0
 
 /*
  * I/O ports initial setup, this configuration is established soon after reset
@@ -95,19 +102,25 @@
  * Everything floating input except:
  *
  * PB1  - Push Pull output (LED1)
+ * PB12 - Push Pull output (SPI2 CS).
+ * PB13 - Alternate output (SPI2 SCK).
+ * PB14 - Normal input     (SPI2 MISO).
+ * PB15 - Alternate output (SPI2 MOSI).
+
  */
 #define VAL_GPIOBCRL            0x88888838      /*  PB7...PB0 */
-#define VAL_GPIOBCRH            0x88888888      /* PB15...PB8 */
+#define VAL_GPIOBCRH            0xB4B38888      /* PB15...PB8 */
 #define VAL_GPIOBODR            0xFFFFFFFF
 
 /*
  * Port C setup.
  * Everything input with pull-up except:
  *
+ * PC0  - Push Pull output (VINH)
  * PC6  - Push Pull output (LED2)
  * PC7  - Push Pull output (LED3)
  */
-#define VAL_GPIOCCRL            0x33888888      /*  PC7...PC0 */
+#define VAL_GPIOCCRL            0x33888883      /*  PC7...PC0 */
 #define VAL_GPIOCCRH            0x88888888      /* PC15...PC8 */
 #define VAL_GPIOCODR            0xFFFFFFFF
 
