@@ -55,6 +55,7 @@
 #define LED4					8
 
 #define SERIAL_DRIVER           SD1
+#define SPI_DRIVER              SPID2
 
 /*
  * I/O ports initial setup, this configuration is established soon after reset
@@ -95,9 +96,14 @@
  * Everything floating input except:
  *
  * PB1  - Push Pull output (LED1)
+ * PB12 - Push Pull output (SPI2 CS).
+ * PB13 - Alternate output (SPI2 SCK).
+ * PB14 - Normal input     (SPI2 MISO).
+ * PB15 - Alternate output (SPI2 MOSI).
+
  */
 #define VAL_GPIOBCRL            0x88888838      /*  PB7...PB0 */
-#define VAL_GPIOBCRH            0x88888888      /* PB15...PB8 */
+#define VAL_GPIOBCRH            0xB4B38888      /* PB15...PB8 */
 #define VAL_GPIOBODR            0xFFFFFFFF
 
 /*

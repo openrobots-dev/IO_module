@@ -5,7 +5,7 @@
 
 # Compiler options here.
 ifeq ($(USE_OPT),)
-  USE_OPT = -O0 -ggdb -fomit-frame-pointer -falign-functions=16
+  USE_OPT = -fomit-frame-pointer -O0 -ggdb
 endif
 
 # C specific options here (added to USE_OPT).
@@ -15,12 +15,12 @@ endif
 
 # C++ specific options here (added to USE_OPT).
 ifeq ($(USE_CPPOPT),)
-  USE_CPPOPT = -fno-rtti -fno-exceptions
+  USE_CPPOPT = -fno-rtti -fno-exceptions -fno-threadsafe-statics
 endif
 
 # Enable this if you want the linker to remove unused code and data
 ifeq ($(USE_LINK_GC),)
-  USE_LINK_GC = yes
+  USE_LINK_GC = no
 endif
 
 # If enabled, this option allows to compile the application in THUMB mode.
@@ -46,6 +46,18 @@ ifeq ($(USE_FWLIB),)
   USE_FWLIB = no
 endif
 
+ifeq ($(R2P_USE_DEBUGTRANSPORT),)
+  R2P_USE_DEBUGTRANSPORT = no
+endif
+
+ifeq ($(R2P_USE_RTCANTRANSPORT),)
+  R2P_USE_RTCANTRANSPORT = yes
+endif
+
+
+# R2P module name
+R2P_MODULE_NAME = IO_0
+
 #
 # Architecture or project specific options
 ##############################################################################
@@ -58,8 +70,7 @@ endif
 PROJECT = ch
 
 # Imported source files and paths
-include paths.mk
-
+include ../../paths.mk
 include ./board.mk
 include $(CHIBIOS)/os/hal/platforms/STM32F1xx/platform.mk
 include $(CHIBIOS)/os/hal/hal.mk
@@ -67,27 +78,31 @@ include $(CHIBIOS)/os/ports/GCC/ARMCMx/STM32F1xx/port.mk
 include $(CHIBIOS)/os/kernel/kernel.mk
 include $(CHIBIOS)/test/test.mk
 include $(RTCAN)/platforms/STM32/platform.mk
+include $(RTCAN)/RTCAN.mk
+include $(R2P)/r2p.mk
+include $(R2P)/port/chibios/port.mk
 
 # Define linker script file here
-LDSCRIPT= $(PORTLD)/STM32F103xB.ld
+LDSCRIPT= ./STM32F103xB_bootloader.ld
 
 # C sources that can be compiled in ARM or THUMB mode depending on the global
 # setting.
 CSRC = $(PORTSRC) \
        $(KERNSRC) \
-       $(TESTSRC) \
        $(HALSRC) \
        $(PLATFORMSRC) \
        $(BOARDSRC) \
-       $(CHIBIOS)/os/various/chprintf.c \
        $(CHIBIOS)/os/various/evtimer.c \
-       $(CHIBIOS)/os/various/shell.c \
        $(CHIBIOS)/os/various/syscalls.c \
-       main.c
+       $(RTCANSRC) \
+       $(RTCANPLATFORMSRC)
 
 # C++ sources that can be compiled in ARM or THUMB mode depending on the global
 # setting.
-CPPSRC =
+CPPSRC = $(R2PSRC) \
+	$(R2PNODES)/led.cpp \
+	chnew.cpp \
+	main.cpp
 
 # C sources to be compiled in ARM mode regardless of the global setting.
 # NOTE: Mixing ARM and THUMB mode enables the -mthumb-interwork compiler
@@ -112,13 +127,11 @@ TCPPSRC =
 # List ASM source files here
 ASMSRC = $(PORTASM)
 
-INCDIR = $(PORTINC) $(KERNINC) $(TESTINC) \
+INCDIR = $(PORTINC) $(KERNINC) \
          $(HALINC) $(PLATFORMINC) $(BOARDINC) \
          $(CHIBIOS)/os/various \
-         $(CHIBIOS)/os/various/cpp_wrappers \
          $(RTCANINC) $(RTCANPLATFORMINC) \
-         $(R2P)/Various/src \
-         $(R2MWINC) $(R2MW)/../Various
+         $(R2PINC)
 
 #
 # Project, sources and paths
@@ -166,7 +179,7 @@ CPPWARN = -Wall -Wextra
 #
 
 # List all default C defines here, like -D_DEBUG=1
-DDEFS = -Dstrcasecmp=strcmp -DPORT_INT_REQUIRED_STACK=32# -DRTCAN_ISMASTER
+DDEFS = -DPORT_INT_REQUIRED_STACK=128
 
 # List all default ASM defines here, like -D_DEBUG=1
 DADEFS =
@@ -189,19 +202,19 @@ DLIBS = -lm
 #
 
 # List all user C define here, like -D_DEBUG=1
-UDEFS =
+UDEFS += -DR2P_MODULE_NAME='"$(R2P_MODULE_NAME)"'
 
 # Define ASM defines here
-UADEFS =
+UADEFS +=
 
 # List all user directories here
-UINCDIR =
+UINCDIR +=
 
 # List the user directory to look for the libraries here
-ULIBDIR =
+ULIBDIR +=
 
 # List all user libraries here
-ULIBS =
+ULIBS += 
 
 #
 # End of user defines
