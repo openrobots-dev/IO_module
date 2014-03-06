@@ -22,7 +22,6 @@
 #include "hal.h"
 
 #include "rtcan.h"
-#include "config.h"
 
 #include <r2p/common.hpp>
 #include <r2p/Middleware.hpp>
@@ -41,6 +40,7 @@
 #include "r2p/msg/std_msgs.hpp"
 #include "r2p/node/pid.hpp"
 
+#include <math.h>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
@@ -79,8 +79,96 @@ static r2p::RTCANTransport rtcantra(RTCAND1);
 RTCANConfig rtcan_config = { 1000000, 100, 60 };
 
 /*===========================================================================*/
+/* Robot parameters.                                                         */
+/*===========================================================================*/
+#define _TICKS 2000.0f
+#define _RATIO 74.0f
+#define _PI 3.14159265359f
+#define _R 0.2f
+#define _L 1.70f
+#define _B 0.96f // for differential drive kinematics
+
+#define R2T(r) ((r / (2 * _PI)) * (_TICKS * _RATIO))
+#define T2R(t) ((t / (_TICKS * _RATIO)) * (2 * _PI))
+
+#define M2T(m) (m * _TICKS * _RATIO)/(2 * _PI * _R)
+#define T2M(t) (t * 2 * _PI * _R)/(_TICKS * _RATIO)
+
+/*===========================================================================*/
 /* Application threads.                                                      */
 /*===========================================================================*/
+
+/*
+ * Encoders publisher node.
+ */
+
+QEIConfig qei1cfg = { QEI_MODE_QUADRATURE, QEI_BOTH_EDGES, QEI_DIRINV_FALSE, };
+
+QEIConfig qei4cfg = { QEI_MODE_QUADRATURE, QEI_BOTH_EDGES, QEI_DIRINV_FALSE, };
+
+float steer = 0.0f;
+
+bool steer_callback(const r2p::EncoderMsg &msg) {
+
+	steer = msg.delta;
+
+	return true;
+}
+msg_t encoders_node(void * arg) {
+	r2p::Node node("encoders");
+	r2p::Publisher<r2p::Encoder2Msg> encoders_pub;
+	r2p::Subscriber<r2p::EncoderMsg, 2> steer_sub(steer_callback);
+	r2p::Publisher<r2p::Velocity3Msg> odometry_pub;
+	r2p::Encoder2Msg *encoder_msgp;
+	r2p::Velocity3Msg *odometry_msgp;
+	systime_t time;
+	float left_delta;
+	float right_delta;
+
+	(void) arg;
+	chRegSetThreadName("encoders_node");
+
+	qeiStart(&QEID1, &qei1cfg);
+	qeiStart(&QEID4, &qei4cfg);
+
+	qeiEnable (&QEID1);
+	qeiEnable (&QEID4);
+
+	node.advertise(encoders_pub, "wheel_encoders");
+	chThdSleepMilliseconds(100);
+	node.subscribe(steer_sub, "steer_encoder");
+	chThdSleepMilliseconds(100);
+	node.advertise(odometry_pub, "odometry");
+	chThdSleepMilliseconds(100);
+
+	for (;;) {
+		time = chTimeNow();
+
+		left_delta = T2R(qeiUpdate(&QEID1));
+		right_delta = T2R(qeiUpdate(&QEID4));
+
+		if (encoders_pub.alloc(encoder_msgp)) {
+			encoder_msgp->left_delta = left_delta;
+			encoder_msgp->right_delta = right_delta;
+			encoders_pub.publish(*encoder_msgp);
+			palTogglePad(LED3_GPIO, LED3);
+		}
+
+		if (odometry_pub.alloc(odometry_msgp)) {
+			float v = (left_delta + right_delta) / 2.0f;
+			odometry_msgp->x = v;
+			odometry_msgp->y = 0.0f;
+//			odometry_msgp->w = v * tanh(steer) / _L;
+			odometry_msgp->w = steer;
+			odometry_pub.publish(*odometry_msgp);
+		}
+
+		time += MS2ST(100);
+		chThdSleepUntil(time);
+	}
+
+	return CH_SUCCESS;
+}
 
 /*
  * Digital potentiometer subscriber node.
@@ -106,7 +194,7 @@ void write(SPIDriver *spip, uint8_t data) {
 
 bool throttle_callback(const r2p::Velocity3Msg &msg) {
 
-	write(&SPI_DRIVER, 0xFF);
+	write(&SPI_DRIVER, (uint8_t) (msg.x / 8.0 * 255.0));
 	palTogglePad(LED2_GPIO, LED2);
 	palSetPad(LED4_GPIO, LED4);
 
@@ -182,10 +270,14 @@ int main(void) {
 
 	r2p::Middleware::instance.start();
 
-	r2p::Thread::create_heap(NULL, THD_WA_SIZE(512), NORMALPRIO,
+	r2p::Thread::create_heap(NULL, THD_WA_SIZE(2048), NORMALPRIO + 1,
 			r2p::ledsub_node, NULL);
-	r2p::Thread::create_heap(NULL, THD_WA_SIZE(1024), NORMALPRIO + 1,
+	chThdSleepMilliseconds(100);
+	r2p::Thread::create_heap(NULL, THD_WA_SIZE(2048), NORMALPRIO + 2,
 			throttle_node, NULL);
+	chThdSleepMilliseconds(100);
+	r2p::Thread::create_heap(NULL, THD_WA_SIZE(2048), NORMALPRIO + 2,
+			encoders_node, NULL);
 
 	for (;;) {
 		r2p::Thread::sleep(r2p::Time::ms(500));
