@@ -1,22 +1,22 @@
 /*
-    ChibiOS/RT - Copyright (C) 2006,2007,2008,2009,2010,
-                 2011 Giovanni Di Sirio.
+ ChibiOS/RT - Copyright (C) 2006,2007,2008,2009,2010,
+ 2011 Giovanni Di Sirio.
 
-    This file is part of ChibiOS/RT.
+ This file is part of ChibiOS/RT.
 
-    ChibiOS/RT is free software; you can redistribute it and/or modify
-    it under the terms of the GNU General Public License as published by
-    the Free Software Foundation; either version 3 of the License, or
-    (at your option) any later version.
+ ChibiOS/RT is free software; you can redistribute it and/or modify
+ it under the terms of the GNU General Public License as published by
+ the Free Software Foundation; either version 3 of the License, or
+ (at your option) any later version.
 
-    ChibiOS/RT is distributed in the hope that it will be useful,
-    but WITHOUT ANY WARRANTY; without even the implied warranty of
-    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-    GNU General Public License for more details.
+ ChibiOS/RT is distributed in the hope that it will be useful,
+ but WITHOUT ANY WARRANTY; without even the implied warranty of
+ MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ GNU General Public License for more details.
 
-    You should have received a copy of the GNU General Public License
-    along with this program.  If not, see <http://www.gnu.org/licenses/>.
-*/
+ You should have received a copy of the GNU General Public License
+ along with this program.  If not, see <http://www.gnu.org/licenses/>.
+ */
 
 #include "ch.h"
 #include "hal.h"
@@ -29,9 +29,9 @@
 #if HAL_USE_PAL || defined(__DOXYGEN__)
 const PALConfig pal_default_config =
 {
-  {VAL_GPIOAODR, VAL_GPIOACRL, VAL_GPIOACRH},
-  {VAL_GPIOBODR, VAL_GPIOBCRL, VAL_GPIOBCRH},
-  {VAL_GPIOCODR, VAL_GPIOCCRL, VAL_GPIOCCRH},
+	{	VAL_GPIOAODR, VAL_GPIOACRL, VAL_GPIOACRH},
+	{	VAL_GPIOBODR, VAL_GPIOBCRL, VAL_GPIOBCRH},
+	{	VAL_GPIOCODR, VAL_GPIOCCRL, VAL_GPIOCCRH},
 };
 #endif
 
@@ -42,7 +42,7 @@ const PALConfig pal_default_config =
  */
 void __early_init(void) {
 
-  stm32_clock_init();
+	stm32_clock_init();
 }
 
 /*
@@ -51,5 +51,5 @@ void __early_init(void) {
 void boardInit(void) {
 
 //  AFIO->MAPR |= AFIO_MAPR_CAN_REMAP_REMAP2;
-  AFIO->MAPR |= AFIO_MAPR_I2C1_REMAP;
+	AFIO->MAPR |= AFIO_MAPR_I2C1_REMAP;
 }

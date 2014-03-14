@@ -40,8 +40,14 @@
 /*
  * MCU type, supported types are defined in ./os/hal/platforms/hal_lld.h.
  */
-#define STM32F10X_MD
+#define STM32F10X_HD
 
+/*
+ * Peripherals assignments.
+ */
+#define SERIAL_DRIVER           SD1
+#define ADC_DRIVER				ADCD1
+#define QEI_DRIVER				QEID4
 /*
  * IO pins assignments.
  */
@@ -54,7 +60,8 @@
 #define LED4_GPIO				GPIOA
 #define LED4					8
 
-#define SERIAL_DRIVER           SD1
+#define VINH_GPIO				GPIOC
+#define VINH					0
 
 /*
  * I/O ports initial setup, this configuration is established soon after reset
@@ -85,29 +92,40 @@
  * Everything floating input except:
 
  * PA8  - Push Pull output (LED4)
+ * PA11 - Normal input     (CAN1 RX).
+ * PA12 - Alternate output (CAN1 TX).
  */
 #define VAL_GPIOACRL            0x88888888      /*  PA7...PA0 */
-#define VAL_GPIOACRH            0x88888883      /* PA15...PA8 */
+#define VAL_GPIOACRH            0x888B4883      /* PA15...PA8 */
 #define VAL_GPIOAODR            0xFFFFFFFF
 
 /*
  * Port B setup.
- * Everything floating input except:
+ * Everything input with pull-up except:
  *
+ * PB0  - Analog input     (ENC_2).
  * PB1  - Push Pull output (LED1)
+ * PB6  - Normal input (SPEED_ENC).
+ * PB12 - Push Pull output (SPI2 CS).
+ * PB13 - Alternate output (SPI2 SCK).
+ * PB14 - Normal input     (SPI2 MISO).
+ * PB15 - Alternate output (SPI2 MOSI).
+
  */
-#define VAL_GPIOBCRL            0x88888838      /*  PB7...PB0 */
-#define VAL_GPIOBCRH            0x88888888      /* PB15...PB8 */
+#define VAL_GPIOBCRL            0x88888830      /*  PB7...PB0 */
+#define VAL_GPIOBCRH            0xB4B38888      /* PB15...PB8 */
 #define VAL_GPIOBODR            0xFFFFFFFF
 
 /*
  * Port C setup.
  * Everything input with pull-up except:
  *
+ * PC0  - Push Pull output (VINH)
+ * PC4  - Analog input     (ENC_1).
  * PC6  - Push Pull output (LED2)
  * PC7  - Push Pull output (LED3)
  */
-#define VAL_GPIOCCRL            0x33888888      /*  PC7...PC0 */
+#define VAL_GPIOCCRL            0x33808883      /*  PC7...PC0 */
 #define VAL_GPIOCCRH            0x88888888      /* PC15...PC8 */
 #define VAL_GPIOCODR            0xFFFFFFFF
 
