@@ -199,7 +199,7 @@ DLIBS = -lm
 #
 
 # List all user C define here, like -D_DEBUG=1
-UDEFS +=
+UDEFS += -DR2P_USE_BOOTLOADER=0 -DR2P_USE_BRIDGE_MODE=0 -DR2P_ITERATE_PUBSUB=1
 
 # Define ASM defines here
 UADEFS +=

@@ -61,10 +61,10 @@ RTCANConfig rtcan_config = { 1000000, 100, 60 };
 #define ADC_NUM_CHANNELS 2
 #define ADC_BUF_DEPTH 1
 
-#define CH1_MIN		397
-#define CH1_CENTER	3239
-#define CH2_MIN		113
-#define CH2_CENTER	2889
+#define CH1_MIN		1359
+#define CH1_CENTER	3088
+#define CH2_MIN		1345
+#define CH2_CENTER	3183
 #define SMOOTH_WINDOW		0.4f
 
 #define _PI			3.14159265359f
@@ -120,11 +120,11 @@ static msg_t steer_absolute_encoder_node(void *arg) {
 
 		time = chTimeNow();
 
-		ch1_position = (float)(adc_samples[0] - CH1_CENTER) / (CH1_MIN - CH1_CENTER) * (_PI / 2);
-		ch2_position = -(float)(adc_samples[1] - CH2_CENTER) / (CH2_MIN - CH2_CENTER) * (_PI / 2);
+		ch1_position = (float)(adc_samples[0] - CH1_CENTER) / (CH1_MIN - CH1_CENTER) * 1.0f; // 1 rad
+		ch2_position = -(float)(adc_samples[1] - CH2_CENTER) / (CH2_MIN - CH2_CENTER) * 1.0f; // 1 rad
 
-		ch1_weight = ch1_position > -SMOOTH_WINDOW ? fabs(ch1_position + SMOOTH_WINDOW) : 0;
-		ch2_weight = ch2_position < SMOOTH_WINDOW ? fabs(ch2_position - SMOOTH_WINDOW) : 0;
+		ch1_weight = ch1_position > -SMOOTH_WINDOW ? fabs(ch1_position + SMOOTH_WINDOW) : 0.0f;
+		ch2_weight = ch2_position < SMOOTH_WINDOW ? fabs(ch2_position - SMOOTH_WINDOW) : 0.0f;
 		weight_sum = ch1_weight + ch2_weight;
 		ch1_weight /= weight_sum;
 		ch2_weight /= weight_sum;
@@ -132,7 +132,7 @@ static msg_t steer_absolute_encoder_node(void *arg) {
 		float steer_position = ch1_position * ch1_weight + ch2_position * ch2_weight;
 
 		if (encoder_pub.alloc(msgp)) {
-			msgp->position = ch1_position >= 0.0 ? ch1_position : ch2_position;
+			msgp->position = steer_position;
 			encoder_pub.publish(*msgp);
 			palTogglePad(LED3_GPIO, LED3);
 		}
