@@ -81,21 +81,19 @@ RTCANConfig rtcan_config = { 1000000, 100, 60 };
 /*===========================================================================*/
 /* Robot parameters.                                                         */
 /*===========================================================================*/
-#define _TICKS 2000.0f
-#define _RATIO 74.0f
+#define _TICKS 180.0f
 #define _PI 3.14159265359f
-#define _R 0.2f
 #define _L 1.70f
 #define _B 0.96f // for differential drive kinematics
 
-#define R2T(r) ((r / (2 * _PI)) * (_TICKS * _RATIO))
-#define T2R(t) ((t / (_TICKS * _RATIO)) * (2 * _PI))
-
-#define M2T(m) (m * _TICKS * _RATIO)/(2 * _PI * _R)
-#define T2M(t) (t * 2 * _PI * _R)/(_TICKS * _RATIO)
+#define R2T(r) ((r / (2 * _PI)) * _TICKS)
+#define T2R(t) ((t / _TICKS) * (2 * _PI))
 
 #define T2ML(t) (t * 0.0077115867)
 #define T2MR(t) (t * 0.0076923077)
+
+#define R2ML(r) (T2ML(R2T(r)))
+#define R2MR(r) (T2MR(R2T(r)))
 
 /*===========================================================================*/
 /* Application threads.                                                      */
@@ -125,7 +123,7 @@ msg_t odometry_node(void * arg) {
 
 	chThdSleepMilliseconds(100);
 
-	for (;;) {
+	while((true)) {
 		node.spin(r2p::Time::ms(500));
 
 		while (steer_sub.fetch(steer_msgp)) {
@@ -135,7 +133,7 @@ msg_t odometry_node(void * arg) {
 
 		while (wheels_sub.fetch(wheels_msgp)) {
 			if (odometry_pub.alloc(odometry_msgp)) {
-				float v = (wheels_msgp->left_delta + wheels_msgp->right_delta) / 2.0f;
+				float v = (R2ML(wheels_msgp->left_delta) + R2MR(wheels_msgp->right_delta)) / 2.0f;
 				odometry_msgp->x = v;
 				odometry_msgp->y = 0.0f;
 	//			odometry_msgp->w = v * tanh(steer) / _L;
@@ -151,13 +149,13 @@ msg_t odometry_node(void * arg) {
 }
 
 /*
- * Digital potentiometer subscriber node.
+ * Throttle control node.
  */
-//const SPIConfig spi2cfg = { NULL, /* HW dependent part.*/GPIOB, 12, SPI_CR1_BR_2 |  SPI_CR1_BR_1 | SPI_CR1_CPOL
-//		| SPI_CR1_CPHA };
 
-QEIConfig qei1cfg = { QEI_MODE_QUADRATURE, QEI_BOTH_EDGES, QEI_DIRINV_FALSE, };
-QEIConfig qei4cfg = { QEI_MODE_QUADRATURE, QEI_BOTH_EDGES, QEI_DIRINV_FALSE, };
+#define THROTTLE_CONTROL_FREQUENCY 20
+
+QEIConfig qei1cfg = { QEI_MODE_QUADRATURE, QEI_BOTH_EDGES, QEI_DIRINV_TRUE, };
+QEIConfig qei4cfg = { QEI_MODE_QUADRATURE, QEI_BOTH_EDGES, QEI_DIRINV_TRUE, };
 
 
 const SPIConfig spi2cfg = { NULL, /* HW dependent part.*/GPIOB, 12, SPI_CR1_BR_2 |  SPI_CR1_BR_1 |  SPI_CR1_BR_0};
@@ -188,18 +186,18 @@ bool throttle_callback(const r2p::Velocity3Msg &msg) {
 	return true;
 }
 
-msg_t velocity_node(void * arg) {
+msg_t throttle_control_node(void * arg) {
 	r2p::Node node("velocity");
 	r2p::Publisher<r2p::Encoder2Msg> wheels_pub;
 	r2p::Subscriber<r2p::Velocity3Msg, 2> vel_sub(throttle_callback);
 	r2p::Encoder2Msg *encoder_msgp;
-	float left_delta;
-	float right_delta;
+	qeidelta_t left_ticks;
+	qeidelta_t right_ticks;
 	uint8_t throttle_cmd;
 	systime_t time;
 
 	(void) arg;
-	chRegSetThreadName("velocity_node");
+	chRegSetThreadName("throttle_control_node");
 
 	/* Start SPI driver. */
 	spiStart(&SPI_DRIVER, &spi2cfg);
@@ -226,20 +224,21 @@ msg_t velocity_node(void * arg) {
 			palTogglePad(LED4_GPIO, LED4);
 		}
 
-		left_delta = T2R(qeiUpdate(&QEID1));
-		right_delta = T2R(qeiUpdate(&QEID4));
 
-		throttle_cmd = throttle_pid.update(left_delta * right_delta / 2.0f);
+		left_ticks = qeiUpdate(&QEID1) * THROTTLE_CONTROL_FREQUENCY;
+		right_ticks = qeiUpdate(&QEID4) * THROTTLE_CONTROL_FREQUENCY;
+
+		throttle_cmd = throttle_pid.update((T2ML(left_ticks) + T2MR(right_ticks)) / 2.0f);
 		throttle_write(&SPI_DRIVER, throttle_cmd);
 
 		if (wheels_pub.alloc(encoder_msgp)) {
-			encoder_msgp->left_delta = left_delta;
-			encoder_msgp->right_delta = right_delta;
+			encoder_msgp->left_delta = T2R(left_ticks);
+			encoder_msgp->right_delta = T2R(right_ticks);
 			wheels_pub.publish(*encoder_msgp);
 			palTogglePad(LED3_GPIO, LED3);
 		}
 
-		time += MS2ST(50);
+		time += MS2ST(1000 / THROTTLE_CONTROL_FREQUENCY);
 		chThdSleepUntil(time);
 	}
 
@@ -293,10 +292,10 @@ int main(void) {
 	r2p::Thread::create_heap(NULL, THD_WA_SIZE(2048), NORMALPRIO + 1,
 			r2p::ledsub_node, NULL);
 	chThdSleepMilliseconds(100);
-	r2p::Thread::create_heap(NULL, THD_WA_SIZE(2048), NORMALPRIO + 2,
-			velocity_node, NULL);
+	r2p::Thread::create_heap(NULL, THD_WA_SIZE(4096), NORMALPRIO + 2,
+			throttle_control_node, NULL);
 	chThdSleepMilliseconds(100);
-	r2p::Thread::create_heap(NULL, THD_WA_SIZE(2048), NORMALPRIO + 2,
+	r2p::Thread::create_heap(NULL, THD_WA_SIZE(4096), NORMALPRIO + 2,
 			odometry_node, NULL);
 
 	for (;;) {
