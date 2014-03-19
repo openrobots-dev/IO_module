@@ -146,20 +146,34 @@ static msg_t steer_absolute_encoder_node(void *arg) {
 /*===========================================================================*/
 /* Speed encoder node.                                                       */
 /*===========================================================================*/
+#include "stm32_tim.h"
 
 #define T2R(t) (t / 1)
 
-QEIConfig qeicfg = {
-        QEI_MODE_DIRCLOCK2,
-        QEI_SINGLE_EDGE,
-        QEI_DIRINV_FALSE,
-};
+void configure_tim4(void) {
 
-//QEIConfig qeicfg = {
-//        QEI_MODE_QUADRATURE,
-//        QEI_BOTH_EDGES,
-//        QEI_DIRINV_FALSE,
-//};
+	rccEnableTIM4(FALSE);
+    rccResetTIM4();
+
+    STM32_TIM4->CCMR1 = TIM_CCMR1_CC2S_0 | STM32_TIM_CCMR1_IC2F(0x9); // Input on TI2 (PB7), Fsamp = CK_INT/8, Nfilt = 8
+	STM32_TIM4->SMCR = TIM_SMCR_TS_2 | TIM_SMCR_TS_1 | TIM_SMCR_SMS_2 | TIM_SMCR_SMS_1 | TIM_SMCR_SMS_0;
+	STM32_TIM4->ARR = 0xFFFF;
+	STM32_TIM4->CR1 = TIM_CR1_CEN;
+}
+
+int16_t delta_tim4(void) {
+	static uint16_t last_cnt = 0;
+	uint16_t cnt;
+	int16_t delta;
+
+	chSysLock();
+	cnt = STM32_TIM4->CNT;
+	delta = cnt - last_cnt;
+//	last_cnt = cnt;
+	chSysUnlock();
+
+	return delta;
+}
 
 msg_t speed_encoder_node(void *arg) {
 	r2p::Node node("speed");
@@ -170,18 +184,16 @@ msg_t speed_encoder_node(void *arg) {
 	(void) arg;
 	chRegSetThreadName("speed_encoder_node");
 
-	qeiStart(&QEI_DRIVER, &qeicfg);
-	qeiEnable (&QEI_DRIVER);
-
 	node.advertise(vel_pub, "encoder1");
+
+	configure_tim4();
 
 	for (;;) {
 		time = chTimeNow();
-		int16_t absolute = qeiGetCount(&QEI_DRIVER);
-		int16_t delta = T2R(qeiUpdate(&QEI_DRIVER));
+		uint16_t delta = T2R(delta_tim4());
 
 		if (vel_pub.alloc(msgp)) {
-			msgp->delta = T2R(delta);
+			msgp->delta = delta;
 			vel_pub.publish(*msgp);
 		}
 

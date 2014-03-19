@@ -108,7 +108,7 @@
  * @brief   Enables the QEI subsystem.
  */
 #if !defined(HAL_USE_QEI) || defined(__DOXYGEN__)
-#define HAL_USE_QEI                 TRUE
+#define HAL_USE_QEI                 FALSE
 #endif
 
 /**

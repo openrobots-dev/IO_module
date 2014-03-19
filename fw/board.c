@@ -50,6 +50,4 @@ void __early_init(void) {
  */
 void boardInit(void) {
 
-//  AFIO->MAPR |= AFIO_MAPR_CAN_REMAP_REMAP2;
-	AFIO->MAPR |= AFIO_MAPR_I2C1_REMAP;
 }

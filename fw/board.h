@@ -47,7 +47,6 @@
  */
 #define SERIAL_DRIVER           SD1
 #define ADC_DRIVER				ADCD1
-#define QEI_DRIVER				QEID4
 /*
  * IO pins assignments.
  */
@@ -105,7 +104,7 @@
  *
  * PB0  - Analog input     (ENC_2).
  * PB1  - Push Pull output (LED1)
- * PB6  - Normal input (SPEED_ENC).
+ * PB7  - Digital input with pull-up (SPEED_ENC).
  * PB12 - Push Pull output (SPI2 CS).
  * PB13 - Alternate output (SPI2 SCK).
  * PB14 - Normal input     (SPI2 MISO).
