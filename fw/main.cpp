@@ -132,9 +132,9 @@ static msg_t steer_absolute_encoder_node(void *arg) {
 		float steer_position = ch1_position * ch1_weight + ch2_position * ch2_weight;
 
 		if (encoder_pub.alloc(msgp)) {
-			msgp->position = steer_position;
+			msgp->position = -steer_position; // Quadrivio has CW positive angles
 			encoder_pub.publish(*msgp);
-			palTogglePad(LED3_GPIO, LED3);
+			palTogglePad(LED2_GPIO, LED2);
 		}
 
 		time += MS2ST(10);
@@ -155,8 +155,8 @@ void configure_tim4(void) {
 	rccEnableTIM4(FALSE);
     rccResetTIM4();
 
-    STM32_TIM4->CCMR1 = TIM_CCMR1_CC2S_0 | STM32_TIM_CCMR1_IC2F(0x9); // Input on TI2 (PB7), Fsamp = CK_INT/8, Nfilt = 8
-	STM32_TIM4->SMCR = TIM_SMCR_TS_2 | TIM_SMCR_TS_1 | TIM_SMCR_SMS_2 | TIM_SMCR_SMS_1 | TIM_SMCR_SMS_0;
+    STM32_TIM4->CCMR1 = TIM_CCMR1_CC1S_0 | STM32_TIM_CCMR1_IC1F(0x9); // Input on TI1 (PB7), Fsamp = CK_INT/8, Nfilt = 8
+	STM32_TIM4->SMCR = TIM_SMCR_TS_2 | TIM_SMCR_TS_0 | TIM_SMCR_SMS_2 | TIM_SMCR_SMS_1 | TIM_SMCR_SMS_0;
 	STM32_TIM4->ARR = 0xFFFF;
 	STM32_TIM4->CR1 = TIM_CR1_CEN;
 }
