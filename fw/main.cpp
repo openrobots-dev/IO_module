@@ -84,10 +84,7 @@ RTCANConfig rtcan_config = { 1000000, 100, 60 };
 #define _TICKS 180.0f
 #define _PI 3.14159265359f
 #define _L 1.70f
-#define _B 0.96f // for differential drive kinematics
-
-#define R2T(r) ((r / (2 * _PI)) * _TICKS)
-#define T2R(t) ((t / _TICKS) * (2 * _PI))
+#define _B 0.96f // for differential drive kinematics#define R2T(r) ((r / (2 * _PI)) * _TICKS)#define T2R(t) ((t / _TICKS) * (2 * _PI))
 
 #define T2ML(t) (t * 0.0077115867)
 #define T2MR(t) (t * 0.0076923077)
@@ -123,7 +120,7 @@ msg_t odometry_node(void * arg) {
 
 	chThdSleepMilliseconds(100);
 
-	while((true)) {
+	while ((true)) {
 		node.spin(r2p::Time::ms(500));
 
 		while (steer_sub.fetch(steer_msgp)) {
@@ -133,11 +130,12 @@ msg_t odometry_node(void * arg) {
 
 		while (wheels_sub.fetch(wheels_msgp)) {
 			if (odometry_pub.alloc(odometry_msgp)) {
-				float v = (R2ML(wheels_msgp->left_delta) + R2MR(wheels_msgp->right_delta)) / 2.0f;
+				float v = (R2ML(wheels_msgp->left_delta)
+						+ R2MR(wheels_msgp->right_delta)) / 2.0f;
 				odometry_msgp->x = v;
 				odometry_msgp->y = 0.0f;
-	//			odometry_msgp->w = v * tanh(steer) / _L;
-				odometry_msgp->w = steer_position;
+				odometry_msgp->w = v * tanh(steer_position) / _L;
+//				odometry_msgp->w = steer_position;
 				odometry_pub.publish(*odometry_msgp);
 			}
 
@@ -155,10 +153,10 @@ msg_t odometry_node(void * arg) {
 #define THROTTLE_CONTROL_FREQUENCY 20
 
 QEIConfig qei1cfg = { QEI_MODE_QUADRATURE, QEI_BOTH_EDGES, QEI_DIRINV_TRUE, };
-QEIConfig qei4cfg = { QEI_MODE_QUADRATURE, QEI_BOTH_EDGES, QEI_DIRINV_TRUE, };
+QEIConfig qei4cfg = { QEI_MODE_QUADRATURE, QEI_BOTH_EDGES, };
 
-
-const SPIConfig spi2cfg = { NULL, /* HW dependent part.*/GPIOB, 12, SPI_CR1_BR_2 |  SPI_CR1_BR_1 |  SPI_CR1_BR_0};
+const SPIConfig spi2cfg = { NULL, /* HW dependent part.*/GPIOB, 12, SPI_CR1_BR_2
+		| SPI_CR1_BR_1 | SPI_CR1_BR_0 };
 
 PID throttle_pid;
 r2p::Time last_throttle_setpoint(0);
@@ -178,13 +176,30 @@ void throttle_write(SPIDriver *spip, uint8_t data) {
 
 bool throttle_callback(const r2p::Velocity3Msg &msg) {
 
-	throttle_pid.set(msg.x);
+	if (msg.x > 0.0) {
+		palClearPad(BWD_GPIO, BWD);
+		palSetPad(FWD_GPIO, FWD);
+		throttle_pid.set(msg.x);
+	} else if ((msg.x < 0.0) && (palReadPad(BSAFE_GPIO, BSAFE) == PAL_HIGH)) {
+		palClearPad(FWD_GPIO, FWD);
+		palSetPad(BWD_GPIO, BWD);
+		throttle_pid.set(-msg.x);
+	} else {
+		palClearPad(FWD_GPIO, FWD);
+		palClearPad(BWD_GPIO, BWD);
+	}
+
 	last_throttle_setpoint = r2p::Time::now();
-	palTogglePad(LED2_GPIO, LED2);
+
+	/* Turn off RED led. */
 	palSetPad(LED4_GPIO, LED4);
+
+	/* Toggle GREEN led. */
+	palTogglePad(LED2_GPIO, LED2);
 
 	return true;
 }
+
 
 msg_t throttle_control_node(void * arg) {
 	r2p::Node node("velocity");
@@ -193,7 +208,7 @@ msg_t throttle_control_node(void * arg) {
 	r2p::Encoder2Msg *encoder_msgp;
 	qeidelta_t left_ticks;
 	qeidelta_t right_ticks;
-	uint8_t throttle_cmd;
+	int16_t throttle_cmd;
 	systime_t time;
 
 	(void) arg;
@@ -209,32 +224,57 @@ msg_t throttle_control_node(void * arg) {
 	qeiEnable (&QEID1);
 	qeiEnable (&QEID4);
 
-	throttle_pid.config(100.0, 0.0, 0.0, 0.1, 0, 255.0);
+	/* Throttle PID configuration. */
+	throttle_pid.config(5.0, 5.0, 0.0, (1.0 / THROTTLE_CONTROL_FREQUENCY),
+			0.0, 255.0);
 
+	/* Subscribe and publish topics. */
 	node.subscribe(vel_sub, "vel_cmd");
 	node.advertise(wheels_pub, "wheel_encoders");
 
 	for (;;) {
 		time = chTimeNow();
 
+		/* Invoke callbacks. */
 		node.spin(r2p::Time::IMMEDIATE);
 
-		if (r2p::Time::now() - last_throttle_setpoint > r2p::Time::ms(500)) {
-			throttle_pid.set(0);
-			palTogglePad(LED4_GPIO, LED4);
-		}
-
-
+		/* Update wheel encoders readings. */
 		left_ticks = qeiUpdate(&QEID1) * THROTTLE_CONTROL_FREQUENCY;
 		right_ticks = qeiUpdate(&QEID4) * THROTTLE_CONTROL_FREQUENCY;
 
-		throttle_cmd = throttle_pid.update((T2ML(left_ticks) + T2MR(right_ticks)) / 2.0f);
-		throttle_write(&SPI_DRIVER, throttle_cmd);
+		/* Check if we are receiving setpoints. */
+		if ((r2p::Time::now() - last_throttle_setpoint) < r2p::Time::ms(500)) {
+			/* Recent setpoint, update the controller. */
+			throttle_cmd = throttle_pid.update(
+					(T2ML(left_ticks) + T2MR(right_ticks)) / 2.0f);
 
+			if (throttle_cmd > 0) throttle_cmd += 6;
+
+			/* Apply the control action. */
+			throttle_write(&SPI_DRIVER, throttle_cmd);
+		} else {
+			/* Setpoint too old, disable the motor. */
+			palClearPad(FWD_GPIO, FWD);
+			palClearPad(BWD_GPIO, BWD);
+			throttle_write(&SPI_DRIVER, 0);
+			throttle_cmd = 0;
+
+			/* Reset the controller. */
+			throttle_pid.reset();
+
+			/* Toggle RED led. */
+			palTogglePad(LED4_GPIO, LED4);
+		}
+
+		/* Publish encoders readings. */
 		if (wheels_pub.alloc(encoder_msgp)) {
-			encoder_msgp->left_delta = T2R(left_ticks);
-			encoder_msgp->right_delta = T2R(right_ticks);
+//			encoder_msgp->left_delta = T2R(left_ticks);
+//			encoder_msgp->right_delta = T2R(right_ticks);
+			encoder_msgp->left_delta = throttle_pid.get_setpoint() - (T2ML(left_ticks) + T2MR(right_ticks)) / 2.0f;
+			encoder_msgp->right_delta = throttle_cmd;
 			wheels_pub.publish(*encoder_msgp);
+
+			/* Toggle ORANGE led. */
 			palTogglePad(LED3_GPIO, LED3);
 		}
 
@@ -272,15 +312,8 @@ int main(void) {
 	halInit();
 	chSysInit();
 
-	palClearPad(LED1_GPIO, LED1);
-	palClearPad(LED2_GPIO, LED2);
-	palClearPad(LED3_GPIO, LED3);
-	palClearPad(LED4_GPIO, LED4);
-	chThdSleepMilliseconds(500);
-	palSetPad(LED1_GPIO, LED1);
-	palSetPad(LED2_GPIO, LED2);
-	palSetPad(LED3_GPIO, LED3);
-	palSetPad(LED4_GPIO, LED4);
+	palClearPad(LED1_GPIO, LED1); palClearPad(LED2_GPIO, LED2); palClearPad(LED3_GPIO, LED3); palClearPad(LED4_GPIO, LED4);
+	chThdSleepMilliseconds(500); palSetPad(LED1_GPIO, LED1); palSetPad(LED2_GPIO, LED2); palSetPad(LED3_GPIO, LED3); palSetPad(LED4_GPIO, LED4);
 
 	r2p::Middleware::instance.initialize(wa_info, sizeof(wa_info),
 			r2p::Thread::LOWEST);

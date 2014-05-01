@@ -54,6 +54,13 @@
 #define LED4_GPIO				GPIOA
 #define LED4					8
 
+#define FWD_GPIO				GPIOC
+#define FWD						12
+#define BWD_GPIO				GPIOD
+#define BWD						2
+#define BSAFE_GPIO				GPIOC
+#define BSAFE					11
+
 #define SERIAL_DRIVER           SD1
 #define SPI_DRIVER              SPID2
 
@@ -119,19 +126,22 @@
  * PC7  - Push Pull output (LED3)
  * PC8  - Normal input (ENC_A).
  * PC9  - Normal input (ENC_B).
+ * PC11 - Input with pull-up (BSAFE).
+ * PC12 - Push Pull output (FWD)
  */
 #define VAL_GPIOCCRL            0x33888888      /*  PC7...PC0 */
-#define VAL_GPIOCCRH            0x88888888      /* PC15...PC8 */
-#define VAL_GPIOCODR            0xFFFFFFFF
+#define VAL_GPIOCCRH            0x88838844      /* PC15...PC8 */
+#define VAL_GPIOCODR            0xFFFFEFFF
 
 /*
  * Port D setup.
  * Everything input with pull-up except:
  *
+ * PD2  - Push Pull output (BWD)
  */
-#define VAL_GPIODCRL            0x88888888      /*  PD7...PD0 */
+#define VAL_GPIODCRL            0x88888388      /*  PD7...PD0 */
 #define VAL_GPIODCRH            0x88888888      /* PD15...PD8 */
-#define VAL_GPIODODR            0xFFFFFFFF
+#define VAL_GPIODODR            0xFFFFFFFB
 
 #if !defined(_FROM_ASM_)
 #ifdef __cplusplus
