@@ -49,6 +49,9 @@
 #define R2P_MODULE_NAME "R2PMODX"
 #endif
 
+#define THROTTLE_CONTROL_FREQUENCY 20
+
+
 extern "C" {
 void *__dso_handle;
 void __cxa_pure_virtual() {
@@ -85,7 +88,6 @@ RTCANConfig rtcan_config = { 1000000, 100, 60 };
 #define _PI 3.14159265359f
 #define _L 1.70f
 #define _B 0.96f // for differential drive kinematics#define R2T(r) ((r / (2 * _PI)) * _TICKS)#define T2R(t) ((t / _TICKS) * (2 * _PI))
-
 #define T2ML(t) (t * 0.0077115867)
 #define T2MR(t) (t * 0.0076923077)
 
@@ -97,26 +99,25 @@ RTCANConfig rtcan_config = { 1000000, 100, 60 };
 /*===========================================================================*/
 
 /*
- * Encoders publisher node.
+ * Pose delta (differential drive kinematics) publisher node.
  */
 
-msg_t odometry_node(void * arg) {
-	r2p::Node node("odometry");
+msg_t delta_pose_differential_node(void * arg) {
+	r2p::Node node("pose_d");
 	r2p::Subscriber<r2p::Encoder2Msg, 5> wheels_sub;
 	r2p::Subscriber<r2p::EncoderMsg, 5> steer_sub;
-	r2p::Publisher<r2p::Velocity3Msg> odometry_pub;
-	r2p::Velocity3Msg * odometry_msgp;
+	r2p::Publisher<r2p::tPose3Msg> delta_pose_pub;
+	r2p::tPose3Msg * delta_pose_msgp;
 	r2p::EncoderMsg * steer_msgp;
 	r2p::Encoder2Msg * wheels_msgp;
-	float steer_position = 0.0f;
-	systime_t time;
+	float steer_position = 0.0;
 
 	(void) arg;
-	chRegSetThreadName("encoders_node");
+	chRegSetThreadName("delta_pose_differential_node");
 
 	node.subscribe(steer_sub, "steer_encoder");
 	node.subscribe(wheels_sub, "wheel_encoders");
-	node.advertise(odometry_pub, "odometry");
+	node.advertise(delta_pose_pub, "delta_pose_diff");
 
 	chThdSleepMilliseconds(100);
 
@@ -129,14 +130,137 @@ msg_t odometry_node(void * arg) {
 		}
 
 		while (wheels_sub.fetch(wheels_msgp)) {
-			if (odometry_pub.alloc(odometry_msgp)) {
+			if (delta_pose_pub.alloc(delta_pose_msgp)) {
+				delta_pose_msgp->timestamp.sec = chTimeNow() / CH_FREQUENCY; // conversion to s
+				delta_pose_msgp->timestamp.nsec = (chTimeNow() % CH_FREQUENCY)
+						* 1000000; // conversion to ns
+
+				float diff = (R2ML(wheels_msgp->right_delta) / THROTTLE_CONTROL_FREQUENCY
+						- R2MR(wheels_msgp->left_delta) / THROTTLE_CONTROL_FREQUENCY);
+
+				if (diff == 0.0f) {
+					delta_pose_msgp->x = R2ML(wheels_msgp->right_delta) / THROTTLE_CONTROL_FREQUENCY;
+					delta_pose_msgp->y = 0;
+					delta_pose_msgp->w = 0;
+					delta_pose_pub.publish(*delta_pose_msgp);
+				} else {
+					float radius = _B / 2.0f
+							* (R2ML(wheels_msgp->right_delta) / THROTTLE_CONTROL_FREQUENCY
+									+ R2MR(wheels_msgp->left_delta) / THROTTLE_CONTROL_FREQUENCY) / diff;
+
+					float alpha = diff / _B;
+
+					delta_pose_msgp->x = radius * sin(alpha);
+					delta_pose_msgp->y = radius * cos(alpha);
+					delta_pose_msgp->w = alpha;
+					delta_pose_pub.publish(*delta_pose_msgp);
+				}
+			}
+
+			wheels_sub.release(*wheels_msgp);
+		}
+	}
+
+	return CH_SUCCESS;
+}
+
+/*
+ * Pose delta (ackermann kinematics) publisher node.
+ */
+
+msg_t delta_pose_ackermann_node(void * arg) {
+	r2p::Node node("pose_h");
+	r2p::Subscriber<r2p::Encoder2Msg, 5> wheels_sub;
+	r2p::Subscriber<r2p::EncoderMsg, 5> steer_sub;
+	r2p::Publisher<r2p::tPose3Msg> delta_pose_pub;
+	r2p::tPose3Msg * delta_pose_msgp;
+	r2p::EncoderMsg * steer_msgp;
+	r2p::Encoder2Msg * wheels_msgp;
+	float steer_position = 0.0f;
+
+	(void) arg;
+	chRegSetThreadName("delta_pose_ackermann_node");
+
+	node.subscribe(steer_sub, "steer_encoder");
+	node.subscribe(wheels_sub, "wheel_encoders");
+	node.advertise(delta_pose_pub, "delta_pose_ack");
+
+	chThdSleepMilliseconds(100);
+
+	while ((true)) {
+		node.spin(r2p::Time::ms(500));
+
+		while (steer_sub.fetch(steer_msgp)) {
+			steer_position = steer_msgp->delta;
+			steer_sub.release(*steer_msgp);
+		}
+
+		while (wheels_sub.fetch(wheels_msgp)) {
+			if (delta_pose_pub.alloc(delta_pose_msgp)) {
+				delta_pose_msgp->timestamp.sec = chTimeNow() / CH_FREQUENCY; // conversion to s
+				delta_pose_msgp->timestamp.nsec = (chTimeNow() % CH_FREQUENCY)
+						* 1000000; // conversion to ns
+
+				float velocity = (R2ML(wheels_msgp->left_delta)/ THROTTLE_CONTROL_FREQUENCY
+						+ R2MR(wheels_msgp->right_delta)/ THROTTLE_CONTROL_FREQUENCY) / 2.0f;
+				float orientation = velocity * tanh(steer_position) / _L;
+
+				delta_pose_msgp->x = velocity * cos(orientation);
+				delta_pose_msgp->y = velocity * sin(orientation);
+				delta_pose_msgp->w = orientation;
+				delta_pose_pub.publish(*delta_pose_msgp);
+			}
+
+			wheels_sub.release(*wheels_msgp);
+		}
+	}
+
+	return CH_SUCCESS;
+}
+
+/*
+ * Velocity publisher node.
+ */
+
+msg_t velocity_node(void * arg) {
+	r2p::Node node("velocity");
+	r2p::Subscriber<r2p::Encoder2Msg, 5> wheels_sub;
+	r2p::Subscriber<r2p::EncoderMsg, 5> steer_sub;
+	r2p::Publisher<r2p::tVelocity3Msg> velocity_pub;
+	r2p::tVelocity3Msg * velocity_msgp;
+	r2p::EncoderMsg * steer_msgp;
+	r2p::Encoder2Msg * wheels_msgp;
+	float steer_position = 0.0f;
+
+	(void) arg;
+	chRegSetThreadName("velocity_node");
+
+	node.subscribe(steer_sub, "steer_encoder");
+	node.subscribe(wheels_sub, "wheel_encoders");
+	node.advertise(velocity_pub, "velocity");
+
+	chThdSleepMilliseconds(100);
+
+	while ((true)) {
+		node.spin(r2p::Time::ms(500));
+
+		while (steer_sub.fetch(steer_msgp)) {
+			steer_position = steer_msgp->delta;
+			steer_sub.release(*steer_msgp);
+		}
+
+		while (wheels_sub.fetch(wheels_msgp)) {
+			if (velocity_pub.alloc(velocity_msgp)) {
+				velocity_msgp->timestamp.sec = chTimeNow() / CH_FREQUENCY; // conversion to s
+				velocity_msgp->timestamp.nsec = (chTimeNow() % CH_FREQUENCY)
+						* 1000000; // conversion to ns
+
 				float v = (R2ML(wheels_msgp->left_delta)
 						+ R2MR(wheels_msgp->right_delta)) / 2.0f;
-				odometry_msgp->x = v;
-				odometry_msgp->y = 0.0f;
-				odometry_msgp->w = v * tanh(steer_position) / _L;
-//				odometry_msgp->w = steer_position;
-				odometry_pub.publish(*odometry_msgp);
+				velocity_msgp->x = v;
+				velocity_msgp->y = 0.0f;
+				velocity_msgp->w = v * tanh(steer_position) / _L;
+				velocity_pub.publish(*velocity_msgp);
 			}
 
 			wheels_sub.release(*wheels_msgp);
@@ -149,9 +273,6 @@ msg_t odometry_node(void * arg) {
 /*
  * Throttle control node.
  */
-
-#define THROTTLE_CONTROL_FREQUENCY 20
-
 QEIConfig qei1cfg = { QEI_MODE_QUADRATURE, QEI_BOTH_EDGES, QEI_DIRINV_TRUE, };
 QEIConfig qei4cfg = { QEI_MODE_QUADRATURE, QEI_BOTH_EDGES, };
 
@@ -177,16 +298,14 @@ void throttle_write(SPIDriver *spip, uint8_t data) {
 bool throttle_callback(const r2p::Velocity3Msg &msg) {
 
 	if (msg.x > 0.0) {
-		palClearPad(BWD_GPIO, BWD);
-		palSetPad(FWD_GPIO, FWD);
+		palClearPad(BWD_GPIO, BWD); palSetPad(FWD_GPIO, FWD);
 		throttle_pid.set(msg.x);
 	} else if ((msg.x < 0.0) && (palReadPad(BSAFE_GPIO, BSAFE) == PAL_HIGH)) {
-		palClearPad(FWD_GPIO, FWD);
-		palSetPad(BWD_GPIO, BWD);
+		palClearPad(FWD_GPIO, FWD); palSetPad(BWD_GPIO, BWD);
 		throttle_pid.set(-msg.x);
 	} else {
-		palClearPad(FWD_GPIO, FWD);
-		palClearPad(BWD_GPIO, BWD);
+		throttle_pid.reset();
+		palClearPad(FWD_GPIO, FWD); palClearPad(BWD_GPIO, BWD);
 	}
 
 	last_throttle_setpoint = r2p::Time::now();
@@ -200,7 +319,6 @@ bool throttle_callback(const r2p::Velocity3Msg &msg) {
 	return true;
 }
 
-
 msg_t throttle_control_node(void * arg) {
 	r2p::Node node("velocity");
 	r2p::Publisher<r2p::Encoder2Msg> wheels_pub;
@@ -209,6 +327,7 @@ msg_t throttle_control_node(void * arg) {
 	qeidelta_t left_ticks;
 	qeidelta_t right_ticks;
 	int16_t throttle_cmd;
+	float speed;
 	systime_t time;
 
 	(void) arg;
@@ -225,8 +344,8 @@ msg_t throttle_control_node(void * arg) {
 	qeiEnable (&QEID4);
 
 	/* Throttle PID configuration. */
-	throttle_pid.config(5.0, 5.0, 0.0, (1.0 / THROTTLE_CONTROL_FREQUENCY),
-			0.0, 255.0);
+	throttle_pid.config(5.0, 5.0, 0.0, (1.0 / THROTTLE_CONTROL_FREQUENCY), 0.0,
+			255.0);
 
 	/* Subscribe and publish topics. */
 	node.subscribe(vel_sub, "vel_cmd");
@@ -241,21 +360,21 @@ msg_t throttle_control_node(void * arg) {
 		/* Update wheel encoders readings. */
 		left_ticks = qeiUpdate(&QEID1) * THROTTLE_CONTROL_FREQUENCY;
 		right_ticks = qeiUpdate(&QEID4) * THROTTLE_CONTROL_FREQUENCY;
+		speed = (T2ML(left_ticks) + T2MR(right_ticks)) / 2.0f;
 
 		/* Check if we are receiving setpoints. */
 		if ((r2p::Time::now() - last_throttle_setpoint) < r2p::Time::ms(500)) {
 			/* Recent setpoint, update the controller. */
-			throttle_cmd = throttle_pid.update(
-					(T2ML(left_ticks) + T2MR(right_ticks)) / 2.0f);
+			throttle_cmd = throttle_pid.update(speed);
 
-			if (throttle_cmd > 0) throttle_cmd += 6;
+			if (throttle_cmd > 0)
+				throttle_cmd += 4;
 
 			/* Apply the control action. */
 			throttle_write(&SPI_DRIVER, throttle_cmd);
 		} else {
 			/* Setpoint too old, disable the motor. */
-			palClearPad(FWD_GPIO, FWD);
-			palClearPad(BWD_GPIO, BWD);
+			palClearPad(FWD_GPIO, FWD); palClearPad(BWD_GPIO, BWD);
 			throttle_write(&SPI_DRIVER, 0);
 			throttle_cmd = 0;
 
@@ -268,10 +387,8 @@ msg_t throttle_control_node(void * arg) {
 
 		/* Publish encoders readings. */
 		if (wheels_pub.alloc(encoder_msgp)) {
-//			encoder_msgp->left_delta = T2R(left_ticks);
-//			encoder_msgp->right_delta = T2R(right_ticks);
-			encoder_msgp->left_delta = throttle_pid.get_setpoint() - (T2ML(left_ticks) + T2MR(right_ticks)) / 2.0f;
-			encoder_msgp->right_delta = throttle_cmd;
+			encoder_msgp->left_delta = T2R(left_ticks);
+			encoder_msgp->right_delta = T2R(right_ticks);
 			wheels_pub.publish(*encoder_msgp);
 
 			/* Toggle ORANGE led. */
@@ -312,8 +429,8 @@ int main(void) {
 	halInit();
 	chSysInit();
 
-	palClearPad(LED1_GPIO, LED1); palClearPad(LED2_GPIO, LED2); palClearPad(LED3_GPIO, LED3); palClearPad(LED4_GPIO, LED4);
-	chThdSleepMilliseconds(500); palSetPad(LED1_GPIO, LED1); palSetPad(LED2_GPIO, LED2); palSetPad(LED3_GPIO, LED3); palSetPad(LED4_GPIO, LED4);
+	palClearPad(LED1_GPIO, LED1);palClearPad(LED2_GPIO, LED2);palClearPad(LED3_GPIO, LED3);palClearPad(LED4_GPIO, LED4);
+	chThdSleepMilliseconds(500);palSetPad(LED1_GPIO, LED1);palSetPad(LED2_GPIO, LED2);palSetPad(LED3_GPIO, LED3);palSetPad(LED4_GPIO, LED4);
 
 	r2p::Middleware::instance.initialize(wa_info, sizeof(wa_info),
 			r2p::Thread::LOWEST);
@@ -322,17 +439,25 @@ int main(void) {
 
 	r2p::Middleware::instance.start();
 
-	r2p::Thread::create_heap(NULL, THD_WA_SIZE(2048), NORMALPRIO + 1,
-			r2p::ledsub_node, NULL);
+	r2p::ledsub_conf ledsub_conf = { "led" };
+	r2p::Thread::create_heap(NULL, THD_WA_SIZE(512), NORMALPRIO,
+			r2p::ledsub_node, &ledsub_conf);
+
 	chThdSleepMilliseconds(100);
-	r2p::Thread::create_heap(NULL, THD_WA_SIZE(4096), NORMALPRIO + 2,
+	bool diocane = false;
+	diocane = r2p::Thread::create_heap(NULL, THD_WA_SIZE(4096), NORMALPRIO + 2,
 			throttle_control_node, NULL);
 	chThdSleepMilliseconds(100);
-	r2p::Thread::create_heap(NULL, THD_WA_SIZE(4096), NORMALPRIO + 2,
-			odometry_node, NULL);
+	diocane = r2p::Thread::create_heap(NULL, THD_WA_SIZE(8192), NORMALPRIO + 2,
+			velocity_node, NULL);
+	diocane = r2p::Thread::create_heap(NULL, THD_WA_SIZE(8192), NORMALPRIO + 2,
+			delta_pose_differential_node, NULL);
+	diocane = r2p::Thread::create_heap(NULL, THD_WA_SIZE(8192), NORMALPRIO + 2,
+			delta_pose_ackermann_node, NULL);
 
 	for (;;) {
-		r2p::Thread::sleep(r2p::Time::ms(500));
+		if (diocane < 23)
+			r2p::Thread::sleep(r2p::Time::ms(500));
 	}
 	return CH_SUCCESS;
 }

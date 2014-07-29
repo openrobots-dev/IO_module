@@ -83,7 +83,7 @@ include $(R2P)/r2p.mk
 include $(R2P)/port/chibios/port.mk
 
 # Define linker script file here
-LDSCRIPT= ./STM32F103xB_bootloader.ld
+LDSCRIPT= ./STM32F103xE_bootloader.ld
 
 # C sources that can be compiled in ARM or THUMB mode depending on the global
 # setting.

@@ -126,12 +126,12 @@
  * PC7  - Push Pull output (LED3)
  * PC8  - Normal input (ENC_A).
  * PC9  - Normal input (ENC_B).
- * PC11 - Input with pull-up (BSAFE).
+ * PC11 - Input with pull-down (BSAFE).
  * PC12 - Push Pull output (FWD)
  */
 #define VAL_GPIOCCRL            0x33888888      /*  PC7...PC0 */
 #define VAL_GPIOCCRH            0x88838844      /* PC15...PC8 */
-#define VAL_GPIOCODR            0xFFFFEFFF
+#define VAL_GPIOCODR            0xFFFFE7FF
 
 /*
  * Port D setup.
